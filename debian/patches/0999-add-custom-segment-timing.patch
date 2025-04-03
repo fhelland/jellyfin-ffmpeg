@@ -1,0 +1,57 @@
+--- a/libavformat/hlsenc.c
++++ b/libavformat/hlsenc.c
+@@ -239,6 +239,7 @@
+     ClosedCaptionsStream *cc_streams;
+     unsigned int nb_ccstreams;
+ 
++    int use_start_pts; ///< use start_pts to calculate segment duration
+     int master_m3u8_created; /* status of master play-list creation */
+     char *master_m3u8_url; /* URL of the master m3u8 file */
+     int version; /* HLS version */
+@@ -2489,6 +2490,19 @@
+         vs->start_pts = pkt->pts;
+         if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+             vs->start_pts_from_audio = 1;
++
++        // Check if we should use custom timing based on start sequence
++        // (if the start_pts is greater than the sequence start time, we should)
++        if (vs->start_pts > 0 && hls->start_sequence > 0) {
++            hls->use_start_pts = (hls->start_sequence_source_type == HLS_START_SEQUENCE_AS_START_NUMBER) &&
++                                !(hls->flags & HLS_SPLIT_BY_TIME) &&
++                                !(hls->init_time) &&
++                                (av_compare_ts(vs->start_pts, st->time_base, hls->start_sequence * hls->recording_time, AV_TIME_BASE_Q) > 0);
++
++            if (hls->use_start_pts) {
++                    av_log(s, AV_LOG_DEBUG, "Using custom segment calculation based on start time and HLS_START_SEQUENCE %"PRId64" .\n", hls->start_sequence);
++            }
++        }
+     }
+     if (vs->start_pts_from_audio && st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && vs->start_pts > pkt->pts) {
+         vs->start_pts = pkt->pts;
+@@ -2522,8 +2536,16 @@
+         }
+     }
+ 
++    int pts = pkt->pts - vs->start_pts;
++
++    /* Resume from start sequence - recalculate pts if start_pts > sequence start time */
++    if (hls->use_start_pts) {
++        pts = pkt->pts;
++        end_pts = hls->recording_time * (vs->number + hls->start_sequence);
++    }
++
+     can_split = can_split && (pkt->pts - vs->end_pts > 0);
+-    if (vs->packets_written && can_split && av_compare_ts(pkt->pts - vs->start_pts, st->time_base,
++    if (vs->packets_written && can_split && av_compare_ts(pts, st->time_base,
+                                                           end_pts, AV_TIME_BASE_Q) >= 0) {
+         int64_t new_start_pos;
+         int byterange_mode = (hls->flags & HLS_SINGLE_FILE) || (hls->max_seg_size > 0);
+@@ -2909,7 +2931,7 @@
+         if (hls->flags & HLS_SINGLE_FILE)
+             pattern += 2;
+     }
+-
++    hls->use_start_pts = 0;
+     hls->has_default_key = 0;
+     hls->has_video_m3u8 = 0;
+     ret = update_variant_stream_info(s);
