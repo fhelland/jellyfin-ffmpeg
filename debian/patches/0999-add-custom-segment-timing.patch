@@ -22,7 +22,7 @@
 +                                (av_compare_ts(vs->start_pts, st->time_base, hls->start_sequence * hls->recording_time, AV_TIME_BASE_Q) > 0);
 +
 +            if (hls->use_start_pts) {
-+                    av_log(s, AV_LOG_DEBUG, "Using custom segment calculation based on start time and HLS_START_SEQUENCE %"PRId64" .\n", hls->start_sequence);
++                    av_log(s, AV_LOG_WARNING, "Using custom segment calculation based on start time and HLS_START_SEQUENCE %"PRId64".\n", hls->start_sequence);
 +            }
 +        }
      }
