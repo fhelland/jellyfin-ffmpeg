@@ -8,33 +8,36 @@
      int master_m3u8_created; /* status of master play-list creation */
      char *master_m3u8_url; /* URL of the master m3u8 file */
      int version; /* HLS version */
-@@ -2489,6 +2490,19 @@
+@@ -2489,6 +2490,22 @@
          vs->start_pts = pkt->pts;
          if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
              vs->start_pts_from_audio = 1;
 +
-+        // Check if we should use custom timing based on start sequence
-+        // (if the start_pts is greater than the sequence start time, we should)
++        /* Check if we should calculate segment duration based on start sequence */
 +        if (vs->start_pts > 0 && hls->start_sequence > 0) {
++            int start_sequence_time = hls->start_sequence * hls->recording_time;
++
 +            hls->use_start_pts = (hls->start_sequence_source_type == HLS_START_SEQUENCE_AS_START_NUMBER) &&
 +                                !(hls->flags & HLS_SPLIT_BY_TIME) &&
 +                                !(hls->init_time) &&
-+                                (av_compare_ts(vs->start_pts, st->time_base, hls->start_sequence * hls->recording_time, AV_TIME_BASE_Q) > 0);
++                                // Compare the start_pts of the variant stream with the calculated start sequence time
++                                // Only use this logic if the start_pts is greater than the sequence start time
++                                (av_compare_ts(vs->start_pts, st->time_base, start_sequence_time, AV_TIME_BASE_Q) > 0);
 +
 +            if (hls->use_start_pts) {
-+                    av_log(s, AV_LOG_WARNING, "Using custom segment calculation based on start time and HLS_START_SEQUENCE %"PRId64".\n", hls->start_sequence);
++                    av_log(s, AV_LOG_INFO, "FFmpeg is using segment length calculation based on start time and HLS_START_SEQUENCE=%"PRId64".\n", hls->start_sequence);
 +            }
 +        }
      }
      if (vs->start_pts_from_audio && st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && vs->start_pts > pkt->pts) {
          vs->start_pts = pkt->pts;
-@@ -2522,8 +2536,16 @@
+@@ -2522,8 +2539,16 @@
          }
      }
  
 +    int pts = pkt->pts - vs->start_pts;
 +
-+    /* Resume from start sequence - recalculate pts if start_pts > sequence start time */
++    /* Resume from start_sequence  */
 +    if (hls->use_start_pts) {
 +        pts = pkt->pts;
 +        end_pts = hls->recording_time * (vs->number + hls->start_sequence);
@@ -46,7 +49,7 @@
                                                            end_pts, AV_TIME_BASE_Q) >= 0) {
          int64_t new_start_pos;
          int byterange_mode = (hls->flags & HLS_SINGLE_FILE) || (hls->max_seg_size > 0);
-@@ -2909,7 +2931,7 @@
+@@ -2909,7 +2934,7 @@
          if (hls->flags & HLS_SINGLE_FILE)
              pattern += 2;
      }
