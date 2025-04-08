@@ -1,0 +1,15 @@
+name: '🏗️ Build win-clang-jellyfin-ffmpeg'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build_portable_windows_clang:
+    uses: ./.github/workflows/_meta_win_clang_portable.yaml
+    with:
+      release: false
+
