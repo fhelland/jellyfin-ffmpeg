@@ -1,6 +1,6 @@
 --- a/libavformat/hlsenc.c
 +++ b/libavformat/hlsenc.c
-@@ -239,6 +239,7 @@
+@@ -246,6 +246,7 @@
      ClosedCaptionsStream *cc_streams;
      unsigned int nb_ccstreams;
  
@@ -8,7 +8,7 @@
      int master_m3u8_created; /* status of master play-list creation */
      char *master_m3u8_url; /* URL of the master m3u8 file */
      int version; /* HLS version */
-@@ -2489,6 +2490,22 @@
+@@ -2505,6 +2506,22 @@
          vs->start_pts = pkt->pts;
          if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
              vs->start_pts_from_audio = 1;
@@ -31,7 +31,7 @@
      }
      if (vs->start_pts_from_audio && st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && vs->start_pts > pkt->pts) {
          vs->start_pts = pkt->pts;
-@@ -2522,8 +2539,16 @@
+@@ -2538,8 +2555,16 @@
          }
      }
  
@@ -49,7 +49,7 @@
                                                            end_pts, AV_TIME_BASE_Q) >= 0) {
          int64_t new_start_pos;
          int byterange_mode = (hls->flags & HLS_SINGLE_FILE) || (hls->max_seg_size > 0);
-@@ -2909,7 +2934,7 @@
+@@ -2926,7 +2951,7 @@
          if (hls->flags & HLS_SINGLE_FILE)
              pattern += 2;
      }

@@ -85,3 +85,4 @@
 0085-fix-display-matrix-not-removed-after-autorotation.patch
 0086-unbreak-build-with-latest-svtav1-3-0.patch
 0087-backport-fix-for-missing-h264-sei-build-deps.patch
+0999-add-custom-segment-timing.patch
