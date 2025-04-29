@@ -4,7 +4,7 @@
      ClosedCaptionsStream *cc_streams;
      unsigned int nb_ccstreams;
  
-+    int use_start_pts; ///< use start_pts to calculate segment duration
++    int resync_index; /* use start_pts to calculate segment duration */
      int master_m3u8_created; /* status of master play-list creation */
      char *master_m3u8_url; /* URL of the master m3u8 file */
      int version; /* HLS version */
@@ -13,18 +13,18 @@
          if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
              vs->start_pts_from_audio = 1;
 +
-+        /* Check if we should calculate segment duration based on start sequence */
++        // Check if we should calculate segment lenghts based on start sequence and start_pts.
++        // Only use this logic if the start_pts is greater than the theoretical "sequence start time"
++        // This means we are out of sync with the theoretical start sequence time
 +        if (vs->start_pts > 0 && hls->start_sequence > 0) {
 +            int start_sequence_time = hls->start_sequence * hls->recording_time;
 +
-+            hls->use_start_pts = (hls->start_sequence_source_type == HLS_START_SEQUENCE_AS_START_NUMBER) &&
-+                                !(hls->flags & HLS_SPLIT_BY_TIME) &&
-+                                !(hls->init_time) &&
-+                                // Compare the start_pts of the variant stream with the calculated start sequence time
-+                                // Only use this logic if the start_pts is greater than the sequence start time
-+                                (av_compare_ts(vs->start_pts, st->time_base, start_sequence_time, AV_TIME_BASE_Q) > 0);
++            hls->resync_index = (hls->start_sequence_source_type == HLS_START_SEQUENCE_AS_START_NUMBER)
++                                && !(hls->flags & HLS_SPLIT_BY_TIME)
++                                && !(hls->init_time)
++                                && (av_compare_ts(vs->start_pts, st->time_base, start_sequence_time, AV_TIME_BASE_Q) > 0);
 +
-+            if (hls->use_start_pts) {
++            if (hls->resync_index) {
 +                    av_log(s, AV_LOG_INFO, "FFmpeg is using segment length calculation based on start time and HLS_START_SEQUENCE=%"PRId64".\n", hls->start_sequence);
 +            }
 +        }
@@ -38,7 +38,7 @@
 +    int pts = pkt->pts - vs->start_pts;
 +
 +    /* Resume from start_sequence  */
-+    if (hls->use_start_pts) {
++    if (hls->resync_index) {
 +        pts = pkt->pts;
 +        end_pts = hls->recording_time * (vs->number + hls->start_sequence);
 +    }
@@ -54,7 +54,7 @@
              pattern += 2;
      }
 -
-+    hls->use_start_pts = 0;
++    hls->resync_index = 0;
      hls->has_default_key = 0;
      hls->has_video_m3u8 = 0;
      ret = update_variant_stream_info(s);
