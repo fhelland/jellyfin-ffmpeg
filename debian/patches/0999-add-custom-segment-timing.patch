@@ -49,7 +49,19 @@
                                                            end_pts, AV_TIME_BASE_Q) >= 0) {
          int64_t new_start_pos;
          int byterange_mode = (hls->flags & HLS_SINGLE_FILE) || (hls->max_seg_size > 0);
-@@ -2926,7 +2951,7 @@
+@@ -2664,6 +2689,11 @@
+             return ret;
+         }
+ 
++        double calc_offset = 0;
++        if  (hls->resync_index) {
++            calc_offset = (double)pkt->pts * st->time_base.num / st->time_base.den - (end_pts/AV_TIME_BASE);
++        }
++        av_log(s, AV_LOG_INFO, "Seq %"PRId64": Segment duration: %f sec, offset: %f sec\n",vs->sequence, cur_duration, calc_offset);
+         // if we're building a VOD playlist, skip writing the manifest multiple times, and just wait until the end
+         if (hls->pl_type != PLAYLIST_TYPE_VOD) {
+             if ((ret = hls_window(s, 0, vs)) < 0) {
+@@ -2926,7 +2956,7 @@
          if (hls->flags & HLS_SINGLE_FILE)
              pattern += 2;
      }
