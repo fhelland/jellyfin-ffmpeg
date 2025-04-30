@@ -1,0 +1,17 @@
+name: '🏗️ Build jellyfin-ffmpeg on debian bookworm amd64'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build_debian:
+    uses: ./.github/workflows/_meta.yaml
+    with:
+      distro: 'debian'
+      codenames: '["bookworm"]'
+      architectures: '["amd64"]'
+      release: false
