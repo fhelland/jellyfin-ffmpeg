@@ -8,14 +8,22 @@
      int master_m3u8_created; /* status of master play-list creation */
      char *master_m3u8_url; /* URL of the master m3u8 file */
      int version; /* HLS version */
-@@ -2505,6 +2506,22 @@
+@@ -2453,7 +2454,7 @@
+     HLSContext *hls = s->priv_data;
+     AVFormatContext *oc = NULL;
+     AVStream *st = s->streams[pkt->stream_index];
+-    int64_t end_pts = 0;
++    int64_t end_pts = 0, pts = 0;
+     int is_ref_pkt = 1;
+     int ret = 0, can_split = 1, i, j;
+     int stream_index = 0;
+@@ -2505,6 +2506,21 @@
          vs->start_pts = pkt->pts;
          if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
              vs->start_pts_from_audio = 1;
 +
 +        // Check if we should calculate segment lenghts based on start sequence and start_pts.
 +        // Only use this logic if the start_pts is greater than the theoretical "sequence start time"
-+        // This means we are out of sync with the theoretical start sequence time
 +        if (vs->start_pts > 0 && hls->start_sequence > 0) {
 +            int start_sequence_time = hls->start_sequence * hls->recording_time;
 +
@@ -31,11 +39,11 @@
      }
      if (vs->start_pts_from_audio && st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && vs->start_pts > pkt->pts) {
          vs->start_pts = pkt->pts;
-@@ -2538,8 +2555,16 @@
+@@ -2538,8 +2554,16 @@
          }
      }
  
-+    int pts = pkt->pts - vs->start_pts;
++    pts = pkt->pts - vs->start_pts;
 +
 +    /* Resume from start_sequence  */
 +    if (hls->resync_index) {
@@ -49,19 +57,25 @@
                                                            end_pts, AV_TIME_BASE_Q) >= 0) {
          int64_t new_start_pos;
          int byterange_mode = (hls->flags & HLS_SINGLE_FILE) || (hls->max_seg_size > 0);
-@@ -2664,6 +2689,11 @@
-             return ret;
+@@ -2656,6 +2680,17 @@
          }
  
-+        double calc_offset = 0;
+         cur_duration = (double)(pkt->pts - vs->end_pts) * st->time_base.num / st->time_base.den;
++
 +        if  (hls->resync_index) {
-+            calc_offset = (double)pkt->pts * st->time_base.num / st->time_base.den - (end_pts/AV_TIME_BASE);
++            double calc_offset = (double)pkt->pts * st->time_base.num / st->time_base.den - (end_pts/AV_TIME_BASE);
++            av_log(s, AV_LOG_INFO, "Seq %"PRId64" & vs->number: %i & vs->nb_entries: %i  -  Segment duration: %f sec  -  offset: %f sec\n",
++                vs->sequence, vs->number, cur_duration, calc_offset );
 +        }
-+        av_log(s, AV_LOG_INFO, "Seq %"PRId64": Segment duration: %f sec, offset: %f sec\n",vs->sequence, cur_duration, calc_offset);
-         // if we're building a VOD playlist, skip writing the manifest multiple times, and just wait until the end
-         if (hls->pl_type != PLAYLIST_TYPE_VOD) {
-             if ((ret = hls_window(s, 0, vs)) < 0) {
-@@ -2926,7 +2956,7 @@
++        else {
++            av_log(s, AV_LOG_INFO, "Seq %"PRId64" & vs->number: %i & vs->nb_entries: %i  -  Segment duration: %f sec\n",
++                vs->sequence, vs->number, cur_duration);
++        }
++
+         ret = hls_append_segment(s, hls, vs, cur_duration, vs->start_pos, vs->size);
+         vs->end_pts = pkt->pts;
+         vs->duration = 0;
+@@ -2926,7 +2961,7 @@
          if (hls->flags & HLS_SINGLE_FILE)
              pattern += 2;
      }
