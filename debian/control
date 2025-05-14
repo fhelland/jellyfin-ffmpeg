@@ -42,7 +42,7 @@ Build-Depends:
 # --enable-libzvbi
  libzvbi-dev,
 # --enable-cuda-llvm
- clang:amd64 [!armhf],
+ clang:amd64,
 # --enable-opencl
  ocl-icd-opencl-dev,
 # used to detect libraries
@@ -53,13 +53,16 @@ Build-Depends:
  nasm
 
 Package: jellyfin-ffmpeg7
-Architecture: amd64 armhf arm64
+Architecture: amd64 arm64
 Multi-Arch: foreign
 Replaces: jellyfin-ffmpeg, jellyfin-ffmpeg5, jellyfin-ffmpeg6
 Conflicts: jellyfin-ffmpeg, jellyfin-ffmpeg5, jellyfin-ffmpeg6
 Depends:
  ${shlibs:Depends},
  ${misc:Depends}
+Suggests:
+ intel-opencl-icd [amd64],
+ intel-opencl-icd-legacy [amd64]
 Description: Tools for transcoding, streaming and playing of multimedia files
  FFmpeg is the leading multimedia framework, able to decode, encode, transcode,
  mux, demux, stream, filter and play pretty much anything that humans and
