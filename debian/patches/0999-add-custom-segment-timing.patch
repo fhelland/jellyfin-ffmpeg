@@ -54,7 +54,7 @@
 +
 +        // If enabled, calculate segment lengths based on start_sequence and start_pts.
 +        // Improves segment alignment when seeking for static manifests during stream copy.
-+        if (!end_pts_discont_from_start(vs, st, hls)) {
++        if (!end_pts_resume_from_start_number(vs, st, hls)) {
 +            hls->pts_alignment_enabled = 1;
 +            av_log(s, AV_LOG_INFO, "Using segment length calculation based on start time and HLS_START_SEQUENCE=%"PRId64".\n",
 +                   hls->start_sequence);
