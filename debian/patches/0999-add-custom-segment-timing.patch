@@ -4,11 +4,41 @@
      ClosedCaptionsStream *cc_streams;
      unsigned int nb_ccstreams;
  
-+    int resync_index; /* use start_pts to calculate segment duration */
++    int pts_alignment_enabled; /* use start_pts to calculate segment duration */
      int master_m3u8_created; /* status of master play-list creation */
      char *master_m3u8_url; /* URL of the master m3u8 file */
      int version; /* HLS version */
-@@ -2453,7 +2454,7 @@
+@@ -2448,12 +2449,37 @@
+ 
+     return ret;
+ }
++
++// Determines whether to enable alternative end_pts calculation.
++// Input seek position and start_number should match a m3u8 file already generated.
++static int end_pts_resume_from_start_number(VariantStream *vs, AVStream *st, HLSContext *hls)
++{
++    if (vs->start_pts <= 0 ||
++        vs->start_pts == AV_NOPTS_VALUE ||
++        hls->start_sequence == 0 ||
++        (hls->flags & HLS_SPLIT_BY_TIME) ||
++        hls->init_time > 0) {
++        return AVERROR(EINVAL);
++    }
++
++    if (hls->start_sequence > INT64_MAX / hls->recording_time) {
++        return AVERROR(EOVERFLOW);
++    }
++    int64_t start_sequence_time = hls->start_sequence * hls->recording_time;
++    // int64_t start_pts_us = av_rescale_q(vs->start_pts, st->time_base, AV_TIME_BASE_Q);
++    if (av_compare_ts(vs->start_pts, st->time_base, start_sequence_time, AV_TIME_BASE_Q) < 0)
++        return AVERROR(EINVAL);
++    // if (start_pts_us < start_sequence_time)
++
++    return 0;
++}
++
+ static int hls_write_packet(AVFormatContext *s, AVPacket *pkt)
+ {
      HLSContext *hls = s->priv_data;
      AVFormatContext *oc = NULL;
      AVStream *st = s->streams[pkt->stream_index];
@@ -17,37 +47,32 @@
      int is_ref_pkt = 1;
      int ret = 0, can_split = 1, i, j;
      int stream_index = 0;
-@@ -2505,6 +2506,21 @@
+@@ -2505,7 +2531,16 @@
          vs->start_pts = pkt->pts;
          if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
              vs->start_pts_from_audio = 1;
 +
-+        // Check if we should calculate segment lenghts based on start sequence and start_pts.
-+        // Only use this logic if the start_pts is greater than the theoretical "sequence start time"
-+        if (vs->start_pts > 0 && hls->start_sequence > 0) {
-+            int start_sequence_time = hls->start_sequence * hls->recording_time;
-+
-+            hls->resync_index = (hls->start_sequence_source_type == HLS_START_SEQUENCE_AS_START_NUMBER)
-+                                && !(hls->flags & HLS_SPLIT_BY_TIME)
-+                                && !(hls->init_time)
-+                                && (av_compare_ts(vs->start_pts, st->time_base, start_sequence_time, AV_TIME_BASE_Q) > 0);
-+
-+            if (hls->resync_index) {
-+                    av_log(s, AV_LOG_INFO, "FFmpeg is using segment length calculation based on start time and HLS_START_SEQUENCE=%"PRId64".\n", hls->start_sequence);
-+            }
++        // If enabled, calculate segment lengths based on start_sequence and start_pts.
++        // Improves segment alignment when seeking for static manifests during stream copy.
++        if (!end_pts_discont_from_start(vs, st, hls)) {
++            hls->pts_alignment_enabled = 1;
++            av_log(s, AV_LOG_INFO, "Using segment length calculation based on start time and HLS_START_SEQUENCE=%"PRId64".\n",
++                   hls->start_sequence);
 +        }
      }
++
      if (vs->start_pts_from_audio && st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && vs->start_pts > pkt->pts) {
          vs->start_pts = pkt->pts;
-@@ -2538,8 +2554,16 @@
+         vs->start_pts_from_audio = 0;
+@@ -2538,8 +2573,16 @@
          }
      }
  
 +    pts = pkt->pts - vs->start_pts;
 +
-+    /* Resume from start_sequence  */
-+    if (hls->resync_index) {
++    if (hls->pts_alignment_enabled) {
 +        pts = pkt->pts;
++        /* Calculate end_pts as if segments ahead of start_sequence has already been written  */
 +        end_pts = hls->recording_time * (vs->number + hls->start_sequence);
 +    }
 +
@@ -57,33 +82,6 @@
                                                            end_pts, AV_TIME_BASE_Q) >= 0) {
          int64_t new_start_pos;
          int byterange_mode = (hls->flags & HLS_SINGLE_FILE) || (hls->max_seg_size > 0);
-@@ -2656,6 +2680,17 @@
-         }
- 
-         cur_duration = (double)(pkt->pts - vs->end_pts) * st->time_base.num / st->time_base.den;
-+
-+        if  (hls->resync_index) {
-+            double calc_offset = (double)pkt->pts * st->time_base.num / st->time_base.den - (end_pts/AV_TIME_BASE);
-+            av_log(s, AV_LOG_INFO, "Seq %"PRId64" & vs->number: %i & vs->nb_entries: %i  -  Segment duration: %f sec  -  offset: %f sec\n",
-+                vs->sequence, vs->number, cur_duration, calc_offset );
-+        }
-+        else {
-+            av_log(s, AV_LOG_INFO, "Seq %"PRId64" & vs->number: %i & vs->nb_entries: %i  -  Segment duration: %f sec\n",
-+                vs->sequence, vs->number, cur_duration);
-+        }
-+
-         ret = hls_append_segment(s, hls, vs, cur_duration, vs->start_pos, vs->size);
-         vs->end_pts = pkt->pts;
-         vs->duration = 0;
-@@ -2926,7 +2961,7 @@
-         if (hls->flags & HLS_SINGLE_FILE)
-             pattern += 2;
-     }
--
-+    hls->resync_index = 0;
-     hls->has_default_key = 0;
-     hls->has_video_m3u8 = 0;
-     ret = update_variant_stream_info(s);
 --- a/libavformat/movenc.c
 +++ b/libavformat/movenc.c
 @@ -8547,6 +8547,7 @@
